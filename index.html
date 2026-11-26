@@ -121,6 +121,17 @@ nav .badge{position:absolute;top:0;right:24%;background:var(--accent);color:#fff
 a{color:var(--accent);font-weight:600}
 .empty{color:var(--mut);text-align:center;padding:12px 0}
 details summary{cursor:pointer;list-style:none}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.cal .wd{text-align:center;font-size:11px;font-weight:600;color:var(--mut);padding-bottom:4px}
+.cal .cd{aspect-ratio:1;border:0;background:none;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font:500 15px Inter,sans-serif;color:var(--txt);cursor:pointer;padding:0}
+.cal .cd.has{background:var(--card2)}
+.cal .cd.today span:first-child{background:var(--accent);color:#fff;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-weight:700}
+.cal .cd.sel{outline:2px solid var(--ink)}
+.dots{display:flex;gap:2px;height:6px}
+.dots i,.legend i{display:inline-block;width:6px;height:6px;border-radius:50%}
+i.cumple{background:var(--accent)}i.kid{background:var(--gold)}i.qued{background:var(--sage)}i.fecha{background:var(--ink)}i.viaje{background:#8a7ab8}
+.legend{display:flex;flex-wrap:wrap;gap:6px 12px;justify-content:center;font-size:11px;color:var(--mut);margin-top:12px}
+.legend span{display:inline-flex;align-items:center;gap:4px}
 details summary::-webkit-details-marker{display:none}
 </style>
 </head>
@@ -146,6 +157,7 @@ const RECO_CATS=[['bar','🍻','Bares'],['resto','🍽️','Restaurantes'],['pel
 const Q_TYPES=[['bar','🍻','Bar'],['resto','🍽️','Comer / cenar'],['casa','🏠','En casa'],['plan','🌳','Plan'],['otro','🎉','Otro']];
 const F_TYPES=[['aniversario','💍','Aniversario'],['boda','💒','Boda'],['santo','😇','Santo'],['otro','⭐','Otra fecha']];
 const AWARD_CATS=['La que más ha liado','La más graciosa','La autora de la frase del año','La reina del drama','La más fiestera','La más desaparecida','La que más nos ha cuidado','Mejor look del año'];
+const FICHA=[['ropa','👚','Talla de ropa'],['pantalon','👖','Talla de pantalón'],['zapato','👟','Número de zapato'],['perfume','🌸','Perfume']];
 const MESES=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
 const MESESL=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 const DIAS=['dom','lun','mar','mié','jue','vie','sáb'];
@@ -175,12 +187,14 @@ const uid=()=>Math.random().toString(36).slice(2,10);
 /* ================= ESTADO ================= */
 let db=null,AUTH=null,AUTHED=null,ME=null,FATAL=null,LOGINMODE='in';
 const S={players:{},mine:{},loaded:false};COLS.forEach(c=>S[c]=[]);
-let TAB='home',PLANSEG='quedadas',RECOCAT='todo',RECOFILT='todas',MASSUB=null,MODAL=null;
+let FECHASEG='cal',CALM=0,CALSEL=null,TAB='home',PLANSEG='quedadas',RECOCAT='todo',RECOFILT='todas',MASSUB=null,MODAL=null;
 
 /* ================= JUGADORAS ================= */
-function plist(){return Object.values(S.players).filter(p=>p.nick).sort((a,b)=>a.nick.localeCompare(b.nick))}
+function plist(){return Object.values(S.players).filter(p=>p.nick||p.avatar).sort((a,b)=>nm(a.id).localeCompare(nm(b.id)))}
 function ids(){return plist().map(p=>p.id)}
-function nm(u){const p=S.players[u];return p&&p.nick?p.nick:'Alguien'}
+function presetName(k){const p=PRESETS.find(x=>x[0]===k);return p?p[1]:null}
+function nm(u){const p=S.players[u];if(!p)return'Alguien';return presetName(p.avatar)||p.nick||'Alguien'}
+function apodo(u){const p=S.players[u];if(!p||!p.nick)return'';const n=presetName(p.avatar);return n&&p.nick.trim().toLowerCase()!==n.toLowerCase()?p.nick:''}
 function presetHasPhoto(k){const p=PRESETS.find(x=>x[0]===k);return p&&p[2]}
 function photoSrc(u){const p=S.players[u];if(!p)return null;if(p.photo)return p.photo;if(p.avatar&&presetHasPhoto(p.avatar))return'fotos/'+p.avatar+'.jpg';return null}
 function avHtml(src,label,size,kid){size=size||28;return src?`<img class="av${kid?' kid':''}" src="${esc(src)}" style="width:${size}px;height:${size}px" alt="">`:`<span class="av${kid?' kid':''}" style="width:${size}px;height:${size}px;font-size:${Math.round(size*.45)}px">${esc((label||'?').trim().charAt(0).toUpperCase())}</span>`}
@@ -194,7 +208,7 @@ function forAv(f,size){if(f.startsWith('u:'))return av(f.slice(2),size);const k=
 /* ================= LÓGICA ================= */
 function allDates(){
   const out=[];
-  for(const p of plist())if(p.birth)out.push({kind:'cumple',key:'u:'+p.id,s:p.birth,title:'Cumple de '+p.nick,av:av(p.id,44),who:p.id,emoji:'🎂'});
+  for(const p of plist())if(p.birth)out.push({kind:'cumple',key:'u:'+p.id,s:p.birth,title:'Cumple de '+nm(p.id),av:av(p.id,44),who:p.id,emoji:'🎂'});
   for(const k of S.kids)if(k.birth)out.push({kind:'kid',key:'k:'+k.id,s:k.birth,title:'Cumple de '+k.name,sub:'hij@ de '+nm(k.parent),av:kidAv(k,44),kid:k,emoji:'🎈'});
   for(const f of S.fechas)if(f.date){const t=F_TYPES.find(x=>x[0]===f.type)||F_TYPES[3];out.push({kind:'fecha',key:'f:'+f.id,s:f.date,title:f.title,sub:f.who?nm(f.who):'',av:f.who?av(f.who,44):`<span class="av" style="width:44px;height:44px;font-size:22px;background:var(--sun)">${t[1]}</span>`,f,emoji:t[1]})}
   out.forEach(o=>Object.assign(o,nextOcc(o.s)));
@@ -246,13 +260,13 @@ function playerChips(name,sel,opts){opts=opts||{};const L=plist().filter(p=>!opt
 /* ================= VISTAS: INICIO ================= */
 function vHome(){
   const me=S.players[ME];let h='';
-  h+=`<div class="sec h" style="margin-top:10px"><span>Hola, ${esc(me.nick)} 👋</span></div>`;
+  h+=`<div class="sec h" style="margin-top:10px"><span>Hola, ${esc(nm(ME))} 👋</span></div>`;
   const D0=allDates();
   const todays=D0.filter(d=>d.days===0);
   for(const d of todays){
     if(d.kind==='fecha'){h+=`<div class="card bday">${d.av}<div class="h" style="font-size:22px;margin-top:6px">${d.emoji} Hoy: ${esc(d.title)}</div>${d.sub?`<div class="mut">${esc(d.sub)}</div>`:''}</div>`;continue}
     const isMe=d.who===ME;const big=d.kind==='cumple'?av(d.who,110):kidAv(d.kid,110);
-    h+=`<div class="card bday">${big}<div class="h" style="font-size:26px;margin:8px 0 2px">${isMe?'🎉 ¡Feliz cumple, '+esc(me.nick)+'!':'🎂 ¡Hoy cumple '+esc(d.kind==='cumple'?nm(d.who):d.kid.name)+'!'}</div>${d.age&&d.kind==='kid'?`<div class="b">${d.age} años 🎈</div>`:''}${d.sub&&!isMe?`<div class="mut sm">${esc(d.sub)}</div>`:''}
+    h+=`<div class="card bday">${big}<div class="h" style="font-size:26px;margin:8px 0 2px">${isMe?'🎉 ¡Feliz cumple, '+esc(nm(ME))+'!':'🎂 ¡Hoy cumple '+esc(d.kind==='cumple'?nm(d.who):d.kid.name)+'!'}</div>${d.age&&d.kind==='kid'?`<div class="b">${d.age} años 🎈</div>`:''}${d.sub&&!isMe?`<div class="mut sm">${esc(d.sub)}</div>`:''}
     ${isMe?'<p>Que te lo pasen fenomenal 💛</p>':`<a class="btn coral full" target="_blank" rel="noopener" href="${wa('🎉🎂 ¡Feliz cumpleaños, '+(d.kind==='cumple'?nm(d.who):d.kid.name)+'! 🎂🎉')}">💬 Felicitar por WhatsApp</a>`}</div>`;
   }
   // pendientes
@@ -280,6 +294,7 @@ function vHome(){
   // mini ranking
   const R=ranking().slice(0,3);
   if(R.some(r=>r.total>0))h+=`<div class="sec h"><span>Las que no fallan</span><button class="btn sm ghost" data-act="mas" data-v="ranking">Ranking</button></div><div class="card">${R.map((r,i)=>`<div class="rk"><span class="pos">${['🥇','🥈','🥉'][i]}</span>${av(r.id,38)}<span class="grow b" style="flex:1">${esc(nm(r.id))}</span><span class="sc">${r.pts}</span></div>`).join('')}</div>`;
+  if(me.birth&&!me.ficha)h+=`<div class="card sun tap" data-act="editficha"><b>📇 Rellena tu ficha</b><br><span class="sm">Tus tallas y tu perfume, para que acierten con tus regalos 😉</span></div>`;
   if(!me.birth)h+=`<div class="card sun tap" data-act="profile"><b>🎂 Aún no has puesto tu cumpleaños.</b><br><span class="sm">Toca aquí para añadirlo y que nadie se olvide.</span></div>`;
   return h;
 }
@@ -287,7 +302,7 @@ function vSemaforo(){
   const k=weekendKey(),doc=S.semaforo.find(s=>s.id===k)||{},sat=parseYMD(k),sun=new Date(sat);sun.setDate(sun.getDate()+1);
   const mine=doc[ME];const L=plist();const libres=L.filter(p=>doc[p.id]==='libre').length;
   return `<div class="card"><div class="h ttl">Este finde (${sat.getDate()}-${sun.getDate()} ${MESES[sun.getMonth()]})</div>
-  <div class="sema">${L.map(p=>`<div class="p ${doc[p.id]||'none'}">${av(p.id,44)}${esc(p.nick)}</div>`).join('')}</div>
+  <div class="sema">${L.map(p=>`<div class="p ${doc[p.id]||'none'}">${av(p.id,44)}${esc(nm(p.id))}</div>`).join('')}</div>
   <div class="sm mut" style="margin:4px 0 8px">${libres} libre${libres===1?'':'s'}${libres>=3?' · ¡hay quórum para un plan! 🙌':''}</div>
   <div class="row3">${SEMA.map(([v,e,l])=>`<button class="btn sm ${mine===v?'on':'ghost'}" data-act="sema" data-v="${v}">${e} ${l}</button>`).join('')}</div></div>`;
 }
@@ -340,8 +355,35 @@ function eCard(e){
 }
 
 /* ================= FECHAS ================= */
+function calEvents(y,m){
+  const ev={};const push=(d,o)=>{(ev[d]=ev[d]||[]).push(o)};const last=new Date(y,m+1,0).getDate();
+  for(const p of plist())if(p.birth){const b=p.birth.split('-').map(Number);if(b[1]-1===m)push(b[2],{c:'cumple',html:av(p.id,34),t:'Cumple de '+nm(p.id),act:`data-act="openb" data-k="u:${esc(p.id)}"`})}
+  for(const k of S.kids)if(k.birth){const b=k.birth.split('-').map(Number);if(b[1]-1===m)push(b[2],{c:'kid',html:kidAv(k,34),t:'Cumple de '+k.name+(b[0]>1900?' ('+(y-b[0])+')':''),sub:'hij@ de '+nm(k.parent),act:`data-act="openb" data-k="k:${esc(k.id)}"`})}
+  for(const f of S.fechas)if(f.date){const b=f.date.split('-').map(Number);const t=F_TYPES.find(x=>x[0]===f.type)||F_TYPES[3];if(b[1]-1===m)push(b[2],{c:'fecha',html:`<span class="av" style="width:34px;height:34px;font-size:17px;background:var(--card2)">${t[1]}</span>`,t:f.title,act:`data-act="openf" data-id="${f.id}"`})}
+  for(const q of S.quedadas)if(q.date&&!q.cancel){const d=new Date(q.date);if(d.getFullYear()===y&&d.getMonth()===m)push(d.getDate(),{c:'qued',html:`<span class="av" style="width:34px;height:34px;font-size:17px;background:var(--sage2)">${qType(q)[1]}</span>`,t:q.title,sub:hm(q.date)+(q.place?' · '+q.place:''),act:`data-act="openq" data-id="${q.id}"`})}
+  for(const v of S.viajes)if(v.from){const a=parseYMD(v.from),b=v.to?parseYMD(v.to):a;for(let d=1;d<=last;d++){const x=new Date(y,m,d);if(x>=a&&x<=b)push(d,{c:'viaje',html:`<span class="av" style="width:34px;height:34px;font-size:17px;background:#ece7f5">✈️</span>`,t:'Viaje: '+v.dest,act:`data-act="openv" data-id="${v.id}"`})}}
+  return ev;
+}
+function vCal(){
+  const base=new Date();base.setDate(1);base.setMonth(base.getMonth()+CALM);const y=base.getFullYear(),m=base.getMonth();
+  const ev=calEvents(y,m);const first=(new Date(y,m,1).getDay()+6)%7,last=new Date(y,m+1,0).getDate();const t=today0();
+  let cells='';for(let i=0;i<first;i++)cells+='<div></div>';
+  for(let d=1;d<=last;d++){const key=y+'-'+pad(m+1)+'-'+pad(d);const E=ev[d]||[];const isT=t.getFullYear()===y&&t.getMonth()===m&&t.getDate()===d;
+    cells+=`<button class="cd ${isT?'today':''} ${CALSEL===key?'sel':''} ${E.length?'has':''}" data-act="calsel" data-v="${key}"><span>${d}</span><span class="dots">${E.slice(0,4).map(e=>`<i class="${e.c}"></i>`).join('')}</span></button>`}
+  let h=`<div class="card" style="padding:14px 10px"><div style="display:flex;align-items:center;justify-content:space-between;margin:0 4px 10px"><button class="x" data-act="calm" data-v="-1">‹</button><div class="h" style="font-size:20px;text-transform:capitalize">${MESESL[m]} ${y}</div><button class="x" data-act="calm" data-v="1">›</button></div>
+  <div class="cal">${['L','M','X','J','V','S','D'].map(x=>`<div class="wd">${x}</div>`).join('')}${cells}</div>
+  <div class="legend"><span><i class="cumple"></i>Cumples</span><span><i class="kid"></i>Niños</span><span><i class="qued"></i>Quedadas</span><span><i class="fecha"></i>Fechas</span><span><i class="viaje"></i>Viajes</span></div>${CALM?'<div class="center"><button class="btn sm ghost" data-act="calm" data-v="0">Volver a hoy</button></div>':''}</div>`;
+  const showDays=CALSEL?[+CALSEL.split('-')[2]]:Object.keys(ev).map(Number).sort((a,b)=>a-b);
+  const L=CALSEL&&+CALSEL.split('-')[1]-1===m?showDays:CALSEL?[]:showDays;
+  if(CALSEL&&!(ev[L[0]]||[]).length)h+=`<div class="card empty">Nada apuntado el ${fDay(CALSEL)}.<br><button class="btn sm" style="margin-top:8px" data-act="newq">+ Proponer quedada</button></div>`;
+  else if(L.length)h+=`<div class="card">${L.map(d=>(ev[d]||[]).map(e=>`<div class="item" ${e.act} style="cursor:pointer">${e.html}<span class="grow"><span class="t">${esc(e.t)}</span>${e.sub?`<br><span class="xs mut">${esc(e.sub)}</span>`:''}</span><span class="days">${d}<small>${MESES[m]}</small></span></div>`).join('')).join('')}</div>`;
+  else h+=`<div class="card empty">Este mes no hay nada apuntado.</div>`;
+  return h;
+}
 function vFechas(){
-  const L=allDates();let h=`<div class="row2" style="margin-top:14px"><button class="btn coral" data-act="newkid">+ Niño/a</button><button class="btn" data-act="newf">+ Fecha especial</button></div>`;
+  let h=`<div class="seg">${[['cal','Calendario'],['lista','Próximas']].map(([v,l])=>`<button class="${FECHASEG===v?'on':''}" data-act="fechasg" data-v="${v}">${l}</button>`).join('')}</div>`;
+  if(FECHASEG==='cal')return h+vCal()+`<div class="row2"><button class="btn coral" data-act="newkid">+ Niño/a</button><button class="btn" data-act="newf">+ Fecha especial</button></div>`;
+  const L=allDates();h+=`<div class="row2" style="margin-top:14px"><button class="btn coral" data-act="newkid">+ Niño/a</button><button class="btn" data-act="newf">+ Fecha especial</button></div>`;
   if(!S.players[ME].birth)h+=`<div class="card sun tap" data-act="profile"><b>🎂 Pon tu cumpleaños</b> para que salga aquí.</div>`;
   let lastM=-1;
   h+=L.length?L.map(d=>{const m=d.date.getMonth()+d.date.getFullYear()*12;const hd=m!==lastM?`<div class="sec h" style="text-transform:capitalize">${MESESL[d.date.getMonth()]}${d.date.getFullYear()!==new Date().getFullYear()?' '+d.date.getFullYear():''}</div>`:'';lastM=m;return hd+`<div class="card" style="padding:6px 14px;margin:8px 0">${dateItem(d)}</div>`}).join(''):`<div class="card empty">Aún no hay fechas apuntadas.</div>`;
@@ -373,9 +415,12 @@ function recoCard(r,s){
 
 /* ================= MÁS ================= */
 function vMas(){
-  if(MASSUB)return `<button class="back" data-act="mas" data-v="">← Volver</button>`+({ranking:vRanking,cuentas:vCuentas,awards:vAwards,capsula:vCapsula,frases:vFrases,confes:vConfes,instalar:vInstalar}[MASSUB]||(()=>''))();
-  const T=[['ranking','🏆','Ranking'],['cuentas','💰','Cuentas'],['awards','🏅','Friends Awards'],['capsula','💌','Cápsula del tiempo'],['frases','💬','Frases épicas'],['confes','🤫','Confesionario'],['profile','👤','Mi perfil'],['instalar','📲','Instalar la app']];
+  if(MASSUB)return `<button class="back" data-act="mas" data-v="">← Volver</button>`+({amigas:vAmigas,ranking:vRanking,cuentas:vCuentas,awards:vAwards,capsula:vCapsula,frases:vFrases,confes:vConfes,instalar:vInstalar}[MASSUB]||(()=>''))();
+  const T=[['amigas','👭','Las amigas'],['ranking','🏆','Ranking'],['awards','🏅','Friends Awards'],['capsula','💌','Cápsula del tiempo'],['frases','💬','Frases épicas'],['confes','🤫','Confesionario'],['profile','👤','Mi perfil']];
   return `<div class="grid">${T.map(([k,e,l])=>`<div class="tile" data-act="${k==='profile'?'profile':'mas'}" data-v="${k}"><span class="e">${e}</span>${l}</div>`).join('')}</div><button class="btn ghost full" data-act="logout">Cerrar sesión</button>`;
+}
+function vAmigas(){
+  return `<div class="sec h">Las amigas</div><p class="sm mut">Toca a cualquiera para ver su ficha: tallas y perfume.</p>`+plist().map(p=>{const f=p.ficha||{};const n=FICHA.filter(([k])=>f[k]).length;const ap=apodo(p.id);return `<div class="card tap" data-act="openficha" data-u="${esc(p.id)}" style="display:flex;align-items:center;gap:14px">${av(p.id,56)}<span style="flex:1"><span class="h" style="font-size:19px">${esc(nm(p.id))}</span>${p.id===ME?' <span class="pill sun">TÚ</span>':''}${ap?`<br><span class="sm mut">«${esc(ap)}»</span>`:''}<br><span class="xs mut">${p.birth?'🎂 '+fDay(p.birth)+' · ':''}${n?n+' datos en su ficha':'ficha sin rellenar'}</span></span><span class="mut">›</span></div>`}).join('');
 }
 function vRanking(){
   const R=ranking(),qs=rankQs();
@@ -486,14 +531,15 @@ const MODALS={
   },
   b(key){
     const isU=key.startsWith('u:');const who=isU?key.slice(2):null;const kid=isU?null:kidById(key.slice(2));if(!isU&&!kid)return null;const p=isU?S.players[who]:null;if(isU&&!p)return null;
-    const s=isU?p.birth:kid.birth;const o=s?nextOcc(s):null;const name=isU?p.nick:kid.name;const isMe=who===ME;
+    const s=isU?p.birth:kid.birth;const o=s?nextOcc(s):null;const name=isU?nm(who):kid.name;const isMe=who===ME;
     let h=mhead(''+esc(name))+`<div class="center">${isU?av(who,90):kidAv(kid,90)}<div class="b" style="margin-top:6px">${s?fDay(s):'Sin fecha'}${o?` · ${o.days===0?'¡HOY!':'faltan '+o.days+' días'}`:''}</div>${!isU?`<div class="sm mut">Hij@ de ${esc(nm(kid.parent))}${o&&o.age?' · cumple '+o.age:''}</div>`:''}</div>`;
     if(isMe)return h+`<div class="card sun center" style="margin-top:14px">🤫 Las ideas de regalo y el bote de tu cumple son secretos.<br>¡No mires!</div><button class="btn ghost full" data-act="profile">Editar mi cumpleaños</button>`;
+    if(isU){const f=p.ficha||{};const keys=['ropa','pantalon','zapato','perfume'].filter(k=>f[k]);h+=`<div class="sec h">Su ficha</div><div class="card">${keys.length?keys.map(k=>{const x=FICHA.find(y=>y[0]===k);return `<div class="item"><span style="width:24px;text-align:center">${x[1]}</span><span class="grow"><span class="xs mut">${x[2]}</span><br><span class="t">${esc(f[k])}</span></span></div>`}).join(''):'<div class="empty sm">Aún no ha rellenado su ficha</div>'}</div>`}
     const W=S.wishes.filter(w=>w.for===key).sort((a,b)=>a.at-b.at);
     h+=`<div class="sec h">Ideas de regalo</div>${isU?`<div class="xs mut">${esc(name)} no ve esta lista 🤫</div>`:''}<div class="card">${W.map(w=>`<div class="item"><span class="grow" style="${w.got?'text-decoration:line-through;opacity:.6':''}"><span class="t">${esc(w.text)}</span>${w.link?` · <a href="${esc(w.link)}" target="_blank" rel="noopener">ver</a>`:''}<br><span class="xs mut">Idea de ${esc(nm(w.by))}</span></span><button class="btn sm ${w.got?'on':'ghost'}" data-act="wgot" data-id="${w.id}">${w.got?'✓ Comprado':'Comprado'}</button>${w.by===ME?`<button class="btn sm ghost" data-act="wdel" data-id="${w.id}">✕</button>`:''}</div>`).join('')||'<div class="empty sm">Sin ideas todavía</div>'}<form data-form="wish" data-k="${esc(key)}" style="margin-top:8px"><input name="text" maxlength="100" placeholder="Una idea de regalo…" required style="margin:0 0 6px"><input name="link" type="url" placeholder="Enlace (opcional)" style="margin:0 0 6px"><button class="btn sm">Añadir idea</button></form></div>`;
     const y=o?o.date.getFullYear():new Date().getFullYear();const bid=key.replace(':','_')+'_'+y;const bote=S.botes.find(x=>x.id===bid);
     h+=`<div class="sec h">Bote del regalo ${y}</div>`;
-    if(!bote)h+=`<div class="card"><form data-form="bote" data-k="${esc(key)}" data-bid="${bid}"><div class="row2"><div><label>€ por persona</label><input name="amount" type="number" min="0" step="0.5" required></div><div><label>Organiza</label><select name="org">${plist().filter(x=>x.id!==who).map(x=>`<option value="${esc(x.id)}" ${x.id===ME?'selected':''}>${esc(x.nick)}</option>`).join('')}</select></div></div><button class="btn coral full">Crear bote</button></form></div>`;
+    if(!bote)h+=`<div class="card"><form data-form="bote" data-k="${esc(key)}" data-bid="${bid}"><div class="row2"><div><label>€ por persona</label><input name="amount" type="number" min="0" step="0.5" required></div><div><label>Organiza</label><select name="org">${plist().filter(x=>x.id!==who).map(x=>`<option value="${esc(x.id)}" ${x.id===ME?'selected':''}>${esc(nm(x.id))}</option>`).join('')}</select></div></div><button class="btn coral full">Crear bote</button></form></div>`;
     else{const paid=bote.paid||{};const parts=plist().filter(x=>x.id!==who);const np=parts.filter(x=>paid[x.id]).length;
       h+=`<div class="card"><div>Organiza <b>${esc(nm(bote.org))}</b> · <b>${euro(bote.amount)}</b> por persona</div><div class="sm mut">${np}/${parts.length} han pagado · total ${euro(np*bote.amount)}</div><div class="chips">${parts.map(x=>`<button class="chip ${paid[x.id]?'on':''}" ${bote.org===ME||x.id===ME?`data-act="bpaid" data-id="${bid}" data-u="${esc(x.id)}"`:''}>${paid[x.id]?'✅':'⏳'} ${avn(x.id,22)}</button>`).join('')}</div><div class="xs mut">${bote.org===ME?'Como organizadora, marca quién te ha pagado.':'Márcate cuando hayas pagado.'}</div>${bote.org===ME?`<button class="btn sm ghost" style="margin-top:8px" data-act="bdel" data-id="${bid}">🗑️ Borrar bote</button>`:''}</div>`}
     if(!isU&&(kid.parent===ME||kid.by===ME))h+=`<div class="row2"><button class="btn ghost sm" data-act="editkid" data-id="${kid.id}">✏️ Editar</button><button class="btn ghost sm" data-act="kdel" data-id="${kid.id}">🗑️ Borrar</button></div>`;
@@ -510,10 +556,17 @@ const MODALS={
   newfr(){return mhead('Frase épica','coral')+`<form data-form="frase"><label>La frase</label><textarea name="text" maxlength="200" required placeholder="Palabra por palabra…"></textarea><label>¿Quién la dijo?</label>${playerChips('who','')}<button class="btn coral full">Guardar para la historia</button></form>`},
   newconf(){return mhead('Confesionario','lilac')+`<form data-form="confes"><textarea name="text" maxlength="300" required placeholder="Confieso que…"></textarea><button class="btn lilac full">Enviar en secreto 🤐</button></form>`},
   newaw(){const y=curAward()&&now()>=curAward().revealAt?curAward().year+1:new Date().getFullYear();const d=new Date(y,11,20,15,0);return mhead('Friends Awards '+y,'coral')+`<form data-form="aw" data-y="${y}"><label>Categorías (una por línea)</label><textarea name="cats" style="min-height:180px">${AWARD_CATS.join('\n')}</textarea><label>Fecha de revelación</label><input type="datetime-local" name="when" required value="${toLocalInput(d.getTime())}"><button class="btn coral full">Abrir votaciones</button></form>`},
+  ficha(u){const p=S.players[u];if(!p)return null;const f=p.ficha||{};const ap=apodo(u);const filled=FICHA.filter(([k])=>f[k]);
+    let h=mhead('Ficha')+`<div class="center">${av(u,100)}<div class="h" style="font-size:26px;margin-top:8px">${esc(nm(u))}</div>${ap?`<div class="mut">«${esc(ap)}»</div>`:''}${p.birth?`<div class="sm" style="margin-top:4px">🎂 ${fDay(p.birth)}</div>`:''}</div>`;
+    h+=filled.length?`<div class="card">${filled.map(([k,e,l])=>`<div class="item"><span style="font-size:20px;width:26px;text-align:center">${e}</span><span class="grow"><span class="xs mut">${l}</span><br><span class="t">${esc(f[k])}</span></span></div>`).join('')}</div>`:`<div class="card empty">${u===ME?'Aún no has rellenado tu ficha.':esc(nm(u))+' aún no ha rellenado su ficha.'}</div>`;
+    if(u===ME)h+=`<button class="btn full" data-act="editficha">✏️ Editar mi ficha</button>`;
+    else h+=`<button class="btn ghost full" data-act="openb" data-k="u:${esc(u)}">🎁 Ideas de regalo y bote</button>`;
+    return h},
+  editficha(){const f=(S.players[ME]||{}).ficha||{};return mhead('📇 Mi ficha','coral')+`<p class="sm mut">Para que acierten con los regalos. Rellena solo lo que quieras.</p><form data-form="ficha">${FICHA.map(([k,e,l])=>`<label>${e} ${l}</label><input name="${k}" maxlength="120" value="${esc(f[k]||'')}">`).join('')}<button class="btn coral full">Guardar ficha</button></form>`},
   profile(){const p=S.players[ME];return mhead('Mi perfil')+`<div class="center"><label class="meav" style="display:inline-block">${av(ME,110)}<span class="cam">📷</span><input type="file" accept="image/*" id="photofile" style="display:none"></label><div class="xs mut">Toca la foto para cambiarla</div></div>
-    <form data-form="profile"><label>Apodo</label><input name="nick" maxlength="20" required value="${esc(p.nick)}"><label>Tu cumpleaños</label><input type="date" name="birth" value="${esc(p.birth||'')}"><div class="xs mut" style="margin-top:-6px;margin-bottom:8px">Solo se muestra el día y el mes, nunca la edad 😉</div><button class="btn coral full">Guardar</button></form>
+    <form data-form="profile">${presetName(p.avatar)?`<div class="h" style="font-size:22px;text-align:center;margin:6px 0 12px">${esc(presetName(p.avatar))}</div><label>Apodo (opcional)</label><input name="nick" maxlength="25" value="${esc(apodo(ME))}" placeholder="Sale en tu ficha">`:`<label>Tu nombre</label><input name="nick" maxlength="20" required value="${esc(p.nick||'')}">`}<label>Tu cumpleaños</label><input type="date" name="birth" value="${esc(p.birth||'')}"><div class="xs mut" style="margin-top:-6px;margin-bottom:8px">Solo se muestra el día y el mes, nunca la edad 😉</div><button class="btn coral full">Guardar</button></form>
     ${p.photo&&presetHasPhoto(p.avatar)?'<button class="btn ghost full sm" data-act="photoreset">↩️ Volver a la foto original</button>':''}
-    <div class="sec h">Mis niños</div><div class="card">${S.kids.filter(k=>k.parent===ME).map(k=>`<div class="item" data-act="openb" data-k="k:${k.id}" style="cursor:pointer">${kidAv(k,36)}<span class="grow"><span class="t">${esc(k.name)}</span><br><span class="xs mut">${fDay(k.birth)}</span></span></div>`).join('')||'<div class="empty sm">No has añadido ninguno</div>'}<button class="btn sm coral" style="margin-top:8px" data-act="newkid">+ Añadir</button></div>`}
+    <button class="btn full" data-act="editficha">📇 Rellenar mi ficha</button><div class="sec h">Mis niños</div><div class="card">${S.kids.filter(k=>k.parent===ME).map(k=>`<div class="item" data-act="openb" data-k="k:${k.id}" style="cursor:pointer">${kidAv(k,36)}<span class="grow"><span class="t">${esc(k.name)}</span><br><span class="xs mut">${fDay(k.birth)}</span></span></div>`).join('')||'<div class="empty sm">No has añadido ninguno</div>'}<button class="btn sm coral" style="margin-top:8px" data-act="newkid">+ Añadir</button></div>`}
 };
 function gcal(q){const f=d=>new Date(d).toISOString().replace(/[-:]/g,'').replace(/\.\d{3}/,'');const e=q.date+3*3600e3;return 'https://calendar.google.com/calendar/render?action=TEMPLATE&text='+encodeURIComponent(q.title)+'&dates='+f(q.date)+'/'+f(e)+'&location='+encodeURIComponent(q.place||'')+'&details='+encodeURIComponent((q.note||'')+'\n'+SITE())}
 function ics(q){const f=d=>new Date(d).toISOString().replace(/[-:]/g,'').replace(/\.\d{3}/,'');const t=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Friends//ES','BEGIN:VEVENT','UID:'+q.id+'@friends','DTSTAMP:'+f(now()),'DTSTART:'+f(q.date),'DTEND:'+f(q.date+3*3600e3),'SUMMARY:'+q.title.replace(/[,;]/g,' '),'LOCATION:'+(q.place||'').replace(/[,;]/g,' '),'DESCRIPTION:'+(q.note||'').replace(/\n/g,'\\n').replace(/[,;]/g,' '),'END:VEVENT','END:VCALENDAR'].join('\r\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([t],{type:'text/calendar'}));a.download=(q.title||'quedada').replace(/[^\w\- ]/g,'')+'.ics';document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000)}
@@ -536,6 +589,11 @@ async function act(a,d,el){
   if(a==='pchip'){const g=el.closest('[data-group]');const multi=!!g.dataset.multi;const inp=g.nextElementSibling;if(multi){el.classList.toggle('on')}else{const was=el.classList.contains('on');g.querySelectorAll('.chip').forEach(c=>c.classList.remove('on'));if(!was)el.classList.add('on')}inp.value=[...g.querySelectorAll('.chip.on')].map(c=>c.dataset.u).join(',');return}
   if(a==='qmode'){el.parentElement.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b===el));const f=el.closest('form');f.elements.mode.value=d.v;$('#qfija').style.display=d.v==='fija'?'':'none';$('#qvotar').style.display=d.v==='votar'?'':'none';return}
   if(a==='profile')return openM('profile');
+  if(a==='editficha')return openM('editficha',null,true);
+  if(a==='openficha')return openM('ficha',d.u);
+  if(a==='fechasg'){FECHASEG=d.v;renderAll();return}
+  if(a==='calm'){CALM=d.v==='0'?0:CALM+(+d.v);CALSEL=null;renderAll();return}
+  if(a==='calsel'){CALSEL=CALSEL===d.v?null:d.v;renderAll();return}
   if(a==='photoreset')return upd('players/'+ME,{photo:null},'Foto original de vuelta');
   if(a==='newq')return openM('newq',null,true);
   if(a==='openq')return openM('q',d.id);
@@ -605,7 +663,8 @@ async function formSubmit(name,f){
   if(name==='reg'){const nick=v('nick').slice(0,20),avatar=v('avatar')||null,birth=v('birth')||null;if(!nick)return toast('Pon tu nombre');
     if(avatar&&Object.values(S.players).some(p=>p.id!==ME&&p.avatar===avatar))return toast('Esa ya está cogida 👀');
     const prev=S.players[ME]||{};await safe(()=>D('players/'+ME).set({nick,avatar,birth,photo:prev.photo||null,joinedAt:prev.joinedAt||now()},{merge:true}),'¡Bienvenida! 💛');return}
-  if(name==='profile'){await upd('players/'+ME,{nick:v('nick').slice(0,20),birth:v('birth')||null},'Perfil guardado');closeM();return}
+  if(name==='profile'){const pn=presetName(S.players[ME].avatar);await upd('players/'+ME,{nick:(v('nick')||pn||'').slice(0,25),birth:v('birth')||null},'Perfil guardado');closeM();return}
+  if(name==='ficha'){const o={};FICHA.forEach(([k])=>{const x=v(k);if(x)o[k]=x.slice(0,120)});await upd('players/'+ME,{ficha:o},'📇 Ficha guardada');closeM();openM('ficha',ME);return}
   if(name==='newq'){
     const mode=v('mode');let date=null,opts=null;
     if(mode==='fija'){if(!v('date'))return toast('Pon la fecha y hora');date=new Date(v('date')).getTime()}
@@ -650,7 +709,7 @@ function vRegister(){const prev=S.players[ME]||{};const taken=new Set(Object.val
 
 /* ================= RENDER ================= */
 const NAVI={"home": '<svg viewBox=\"0 0 24 24\"><path d=\"M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z\"/></svg>', "planes": '<svg viewBox=\"0 0 24 24\"><rect x=\"3\" y=\"5\" width=\"18\" height=\"16\" rx=\"2\"/><path d=\"M16 3v4M8 3v4M3 10h18\"/></svg>', "fechas": '<svg viewBox=\"0 0 24 24\"><rect x=\"3\" y=\"8\" width=\"18\" height=\"4\" rx=\"1\"/><path d=\"M12 8v13M5 12v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-8M12 8C10 5 8 3.5 7 4.5S7.5 8 12 8zm0 0c2-3 4-4.5 5-3.5S16.5 8 12 8z\"/></svg>', "recos": '<svg viewBox=\"0 0 24 24\"><path d=\"m12 3 2.8 5.7 6.2.9-4.5 4.4 1 6.2L12 17.3 6.5 20.2l1-6.2L3 9.6l6.2-.9z\"/></svg>', "mas": '<svg viewBox=\"0 0 24 24\"><path d=\"M4 7h16M4 12h16M4 17h16\"/></svg>'};
-function viewKey(){if(FATAL)return'fatal';if(AUTHED===false)return'login';if(!S.loaded)return'loading';if(!S.players[ME]||!S.players[ME].nick)return'register';return TAB}
+function viewKey(){if(FATAL)return'fatal';if(AUTHED===false)return'login';if(!S.loaded)return'loading';if(!S.players[ME]||!(S.players[ME].nick||S.players[ME].avatar))return'register';return TAB}
 function renderAll(){
   const k=viewKey(),m=$('#main');
   const inMain=document.activeElement&&m.contains(document.activeElement)&&/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
